@@ -56,17 +56,27 @@ local HL = {
 ---@type table<string, string> normalized workspace root -> base revset override
 M.bases = {}
 
+-- Inline diff view: removed lines as virtual lines, present lines tinted, and
+-- word-level ranges within changed lines. The counterpart of gitsigns'
+-- show_deleted + linehl + word_diff, which review mode toggles together. Global
+-- like gitsigns', so it is a mode across all buffers rather than per window.
+M.inline = false
+
 -- Per-buffer state: { root, base, base_lines, hunks, timer }.
 local state = {}
 
 --- The jj workspace root containing a buffer's file, or nil. Unnamed buffers
 --- deliberately resolve to nil rather than falling back to cwd -- a scratch
---- buffer belongs to no workspace.
+--- buffer belongs to no workspace. Nor does anything with a URI-style name
+--- (term://, gh://, oil://...): vim.fs.root treats such a name as a relative
+--- path and happily walks up from the cwd, which in a workspace tab IS a jj
+--- root. A terminal gets its term:// name (BufFilePost) a moment before its
+--- buftype is set, so the buftype guard in attach alone does not catch it.
 ---@param buf integer
 ---@return string?
 function M.buf_root(buf)
   local name = vim.api.nvim_buf_get_name(buf)
-  if name == "" then
+  if name == "" or name:match("^%w+://") then
     return nil
   end
   local root = vim.fs.root(name, ".jj")
@@ -165,11 +175,23 @@ function M.refresh(buf)
   end)
 end
 
---- Paint `buf`'s hunks into the sign column.
+--- Paint `buf`'s hunks into the sign column (and, with the inline view on, into
+--- the buffer itself).
 ---@param buf integer
 function M.render(buf)
   vim.api.nvim_buf_clear_namespace(buf, NS, 0, -1)
+  -- A buffer that became special after attaching (buftype is set late for some
+  -- kinds) is not ours to paint; let go of it.
+  if vim.bo[buf].buftype ~= "" then
+    state[buf] = nil
+    return
+  end
   local last = vim.api.nvim_buf_line_count(buf)
+  if M.inline then
+    for _, m in ipairs(require("jjsigns.diff").inline_marks(state[buf].hunks or {}, last)) do
+      pcall(vim.api.nvim_buf_set_extmark, buf, NS, m.row, m.col or 0, m.opts)
+    end
+  end
   for _, h in ipairs(state[buf].hunks or {}) do
     local sign = M.opts.signs[h.type]
     -- A deletion covers no lines, so it still needs one row to sit on.
@@ -272,6 +294,21 @@ function M.preview_hunk()
   })
 end
 
+--- Turn the inline diff view on or off (toggle when `on` is nil) and repaint
+--- every attached buffer.
+---@param on boolean?
+function M.toggle_inline(on)
+  if on == nil then
+    on = not M.inline
+  end
+  M.inline = on
+  for buf in pairs(state) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      M.render(buf)
+    end
+  end
+end
+
 --- Jump to the next (or previous) hunk, wrapping.
 ---@param backwards? boolean
 function M.next_hunk(backwards)
@@ -304,6 +341,18 @@ end
 ---@param opts table?
 function M.setup(opts)
   M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
+  -- Inline-view groups, under gitsigns' names so one colorscheme (or override)
+  -- styles both gutters. `default`: never clobber what gitsigns or the user set.
+  for group, link in pairs({
+    GitSignsAddLn = "DiffAdd",
+    GitSignsChangeLn = "DiffChange",
+    GitSignsDeleteVirtLn = "DiffDelete",
+    GitSignsAddInline = "TermCursor",
+    GitSignsChangeInline = "TermCursor",
+    GitSignsDeleteInline = "TermCursor",
+  }) do
+    vim.api.nvim_set_hl(0, group, { link = link, default = true })
+  end
   local group = vim.api.nvim_create_augroup("jjsigns", { clear = true })
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile", "BufFilePost" }, {
     group = group,
