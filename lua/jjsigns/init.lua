@@ -255,6 +255,16 @@ function M.attach(buf)
   M.refresh(buf)
 end
 
+--- The hunks jjsigns currently holds for `buf`, or nil when it is not
+--- attached. Read-only: the sign column and next_hunk both walk this list, so
+--- it is the thing to inspect when the two disagree.
+---@param buf integer?
+---@return JJHunk[]?
+function M.hunks(buf)
+  local st = state[buf or vim.api.nvim_get_current_buf()]
+  return st and st.hunks or nil
+end
+
 --- The hunk under the cursor, if any.
 ---@return JJHunk?
 local function current_hunk()
