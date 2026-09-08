@@ -76,6 +76,31 @@ describe("diff.from_indices", function()
   end)
 end)
 
+describe("diff.counts", function()
+  local function hunks(a, b)
+    local al, bl = vim.split(a, "\n"), vim.split(b, "\n")
+    return diff.from_indices(vim.diff(a, b, { result_type = "indices" }), al, bl)
+  end
+
+  it("is all zeros with no hunks", function()
+    assert.same({ added = 0, changed = 0, removed = 0 }, diff.counts({}))
+  end)
+
+  it("counts pure additions and deletions on their own side", function()
+    assert.same({ added = 2, changed = 0, removed = 0 }, diff.counts(hunks("a\n", "x\ny\na\n")))
+    assert.same({ added = 0, changed = 0, removed = 1 }, diff.counts(hunks("a\nb\n", "a\n")))
+  end)
+
+  -- gitsigns' rule: the overlap is "changed", the surplus is added or removed.
+  it("splits an uneven change into changed plus the surplus", function()
+    assert.same({ added = 1, changed = 1, removed = 0 }, diff.counts(hunks("a\nb\n", "a\nX\nY\n")))
+    assert.same(
+      { added = 0, changed = 1, removed = 2 },
+      diff.counts(hunks("a\nb\nc\nd\n", "a\nX\n"))
+    )
+  end)
+end)
+
 describe("diff.at / diff.next", function()
   local hunks = {
     { type = "change", start = 2, count = 2 },

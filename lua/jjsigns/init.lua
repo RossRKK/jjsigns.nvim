@@ -157,7 +157,11 @@ function M.refresh(buf)
     local indices = vim.diff(table.concat(base, "\n"), table.concat(lines, "\n"), {
       result_type = "indices",
     }) or {}
-    st.hunks = require("jjsigns.diff").from_indices(indices, base, lines)
+    local diff = require("jjsigns.diff")
+    st.hunks = diff.from_indices(indices, base, lines)
+    -- The same shape gitsigns publishes as b:gitsigns_status_dict, under our
+    -- own name so a statusline can read whichever backend owns the buffer.
+    vim.b[buf].jjsigns_status_dict = diff.counts(st.hunks)
     M.render(buf)
   end
 

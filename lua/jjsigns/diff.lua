@@ -75,6 +75,24 @@ function M.from_indices(indices, old_lines, new_lines)
   return hunks
 end
 
+--- Tally hunks into the three numbers a statusline shows. Same arithmetic as
+--- gitsigns' status dict, so `+1 ~2 -3` means the same thing whichever backend
+--- drew the gutter: a change hunk counts as "changed" for the lines it has on
+--- both sides, and the surplus on either side is an addition or a removal.
+---@param hunks JJHunk[]
+---@return {added: integer, changed: integer, removed: integer}
+function M.counts(hunks)
+  local c = { added = 0, changed = 0, removed = 0 }
+  for _, h in ipairs(hunks) do
+    local old, new = #h.old, #h.new
+    local both = math.min(old, new)
+    c.changed = c.changed + both
+    c.added = c.added + (new - both)
+    c.removed = c.removed + (old - both)
+  end
+  return c
+end
+
 --- The hunk containing (or nearest below) `lnum`, for preview/reset.
 ---@param hunks JJHunk[]
 ---@param lnum integer 1-based buffer line
